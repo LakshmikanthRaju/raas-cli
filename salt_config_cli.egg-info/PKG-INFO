@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: salt-config-cli
-Version: 0.1.0
+Version: 0.5.0
 Summary: Safe Git-to-RaaS workflows and interactive Salt configuration operations
 Author: Salt Config CLI contributors
 Maintainer: Salt Config CLI contributors

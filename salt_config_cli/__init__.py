@@ -5,7 +5,7 @@ This CLI provides infrastructure-as-code capabilities for managing Salt configur
 with a familiar plan/apply workflow similar to Terraform.
 """
 
-__version__ = "0.8.2"
+__version__ = "0.5.0"
 __author__ = "Salt Config CLI contributors"
 
 from salt_config_cli.core.config import SaltConfigSettings

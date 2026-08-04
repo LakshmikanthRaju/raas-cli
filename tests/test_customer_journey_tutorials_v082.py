@@ -13,7 +13,7 @@ def invoke_plain(*args: str):
 
 
 def test_version_bumped_for_customer_journey_release() -> None:
-    assert __version__ == "0.8.2"
+    assert __version__ == "0.5.0"
 
 
 def test_tutorial_list_exposes_customer_journeys() -> None:
