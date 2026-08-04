@@ -1,2 +1,0 @@
-{% set defaults = salt['slsutil.renderer']('salt://vcf-infra/ntp/default.yaml') %}
-{% set ntp = salt['slsutil.merge'](defaults.get('ntp', {}), pillar.get('ntp', {})) %}

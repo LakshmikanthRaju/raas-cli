@@ -1,7 +1,0 @@
-dns:
-  servers:
-    - 10.20.10.10
-    - 10.20.10.11
-  search_domains:
-    - prod.example.com
-    - example.com

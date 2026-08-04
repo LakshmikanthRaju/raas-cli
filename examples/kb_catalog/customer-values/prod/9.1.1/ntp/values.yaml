@@ -1,5 +1,0 @@
-ntp:
-  servers:
-    - ntp1.example.com
-    - ntp2.example.com
-  service_enabled: true

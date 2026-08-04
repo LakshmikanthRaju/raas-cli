@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: salt-config-cli
-Version: 0.8.2
+Version: 0.1.0
 Summary: Safe Git-to-RaaS workflows and interactive Salt configuration operations
 Author: Salt Config CLI contributors
 Maintainer: Salt Config CLI contributors
@@ -44,306 +44,990 @@ Dynamic: license-file
 
 # Salt Config CLI (`scc`)
 
-Salt Config CLI is an interactive and scriptable command-line interface for Salt/RaaS operations. It is designed to make a Git-to-RaaS configuration workflow feel simple without hiding safety, provenance, or advanced controls.
+Salt Config CLI is an interactive and scriptable command-line interface for managing Git-backed Salt configuration through Salt/RaaS.
 
-The normal customer journey is:
+It provides a safe workflow for:
+
+- connecting to one or more RaaS environments;
+- registering reusable Salt-state repositories;
+- registering environment-specific values repositories;
+- validating Git content before publication;
+- planning configuration changes without touching RaaS;
+- running Salt states in dry-run mode with `test=True`;
+- applying approved changes with `test=False`;
+- monitoring the RaaS job ID and per-target results;
+- searching reviewed KB-to-Salt mappings;
+- working directly with target groups, jobs, pillars, minions, and the RaaS file server.
+
+---
+
+## Table of contents
+
+1. [Core principles](#core-principles)
+2. [How SCC works](#how-scc-works)
+3. [Capabilities](#capabilities)
+4. [Requirements and installation](#requirements-and-installation)
+5. [Five-minute quick start](#five-minute-quick-start)
+6. [Connection profiles](#connection-profiles)
+7. [Git repository model](#git-repository-model)
+8. [Repository layouts](#repository-layouts)
+9. [Deployment modes](#deployment-modes)
+10. [End-to-end execution flow](#end-to-end-execution-flow)
+11. [Target groups](#target-groups)
+12. [KB-to-Salt solution catalog](#kb-to-salt-solution-catalog)
+13. [Low-level RaaS operations](#low-level-raas-operations)
+14. [Tutorials and command discovery](#tutorials-and-command-discovery)
+15. [Themes and structured output](#themes-and-structured-output)
+16. [Configuration files and environment variables](#configuration-files-and-environment-variables)
+17. [Security and safety model](#security-and-safety-model)
+18. [Automation and CI/CD](#automation-and-cicd)
+19. [Troubleshooting](#troubleshooting)
+20. [Development and release](#development-and-release)
+
+---
+
+## Core principles
+
+### Repository independence
+
+SCC works with any Git repository that contains valid Salt content or YAML values. The source can be hosted on any Git service supported by the local `git` client.
+
+The following are configurable for each repository:
+
+- repository URL;
+- Git reference, branch, tag, or commit;
+- repository root;
+- path layout;
+- authentication mechanism;
+- TLS verification;
+- source purpose: reusable states or configuration data.
+
+### Separation of reusable logic and environment values
+
+A normal production workflow uses two independently managed sources:
+
+1. **Reusable Salt content**
+   - SLS files
+   - Jinja mapping files
+   - defaults
+   - templates
+   - supporting files
+   - optional KB solution catalog
+
+2. **Environment-specific values**
+   - hostnames
+   - IP addresses
+   - environment settings
+   - release-specific values
+   - feature flags
+   - approved configuration parameters
+
+This separation allows reusable logic to evolve independently from organization-specific configuration.
+
+### Git is the approval system
+
+SCC does not introduce a second approval manifest.
+
+The expected approval path is:
 
 ```text
-shared saltext-vcf states repo ──> SCC validate/publish ──> RaaS file server
-private customer values repo ──> SCC runtime values ───────> direct state.apply ──> target group
-                                             │
-                                             └─ RaaS JID and per-target results
+Update values.yaml
+        ↓
+Create pull request or merge request
+        ↓
+Review and approve
+        ↓
+Merge to an approved branch or tag
+        ↓
+SCC resolves the approved commit and executes it
 ```
 
-SCC also provides a static KB-to-Salt solution catalog, file-server browsing, minion execution, target groups, pillars, saved jobs, live job results, desired-state drift workflows, named RaaS profiles, professional themes, plain terminal output, and a guarded raw RPC escape hatch.
+SCC displays the selected repository, reference, exact commit, file path, state entrypoint, and hashes before execution.
 
-> Start against a non-production RaaS environment and validate the RPC methods and permissions used by your RaaS version before operational rollout.
+### Fail-safe execution
 
-## Why the Git workflow is split into two sources
+- `plan` is the default mode.
+- Salt execution defaults to `test=True`.
+- `apply` requires explicit confirmation.
+- Customer values are passed as execution-scoped pillar by default.
+- A persistent saved job is not created unless `--save-job` is requested.
+- Target groups must already exist and should contain only the intended minions.
 
-A production configuration usually has two different lifecycles:
+---
 
-1. **Reusable Salt content** — open/shared states, defaults, mapping Jinja, templates, and supporting files. For example, a `vcf-salt` repository maintained by the product or community.
-2. **Customer-specific values** — instance, environment, site, and release-specific values. This commonly lives in a private repository where normal pull-request review and approval occur before merge.
+## How SCC works
 
-SCC keeps these sources independent. It does not write repository credentials into the RaaS profile file or `repositories.yaml`.
+```text
+Reusable Salt repository
+        │
+        │ clone/fetch, resolve commit, validate files
+        ▼
+Salt Config CLI
+        │
+        │ publish reusable state tree only
+        ▼
+RaaS file server
+        │
+        │ state.apply
+        ▼
+Target group / Salt minions
+        │
+        │ JID and per-target results
+        ▼
+Salt Config CLI
 
-The customer-values repository remains the single approval system. Customers use their normal pull-request review, branch protection, and merge process. SCC pulls the requested content, validates it, displays the resolved commits and files, and records commit IDs in the RaaS job description and execution output. It does not create or require a separate approval manifest.
+Configuration-values repository
+        │
+        │ load approved values.yaml
+        ▼
+Execution-scoped pillar
+```
 
-## Installation
+The values repository is not copied to the RaaS file server during the normal deployment flow. Its YAML mapping is supplied only to the runtime execution.
 
-Python 3.10 or later and the system `git` executable are required.
+---
+
+## Capabilities
+
+### Git-backed configuration workflow
+
+- named state and data sources;
+- generic Git clone and fetch;
+- configurable roots and layouts;
+- branch, tag, and commit support;
+- SSH, credential-helper, and token authentication;
+- exact commit resolution;
+- recursive state-tree validation;
+- path and symlink safety checks;
+- YAML and UTF-8 validation;
+- SHA-256 hashing;
+- local review workspaces;
+- plan, publish, dry-run, and apply modes.
+
+### RaaS operations
+
+- connection profiles;
+- status and diagnostics;
+- minion listing;
+- Salt module execution;
+- target-group management;
+- file-server browsing, upload, download, and edit;
+- pillar upload and assignment;
+- saved-job management;
+- live runtime execution;
+- job-status and result retrieval;
+- desired-state drift and remediation workflows;
+- guarded raw RPC access for advanced use.
+
+### Operator experience
+
+- interactive setup;
+- command search;
+- guided tutorials;
+- copy-pasteable examples;
+- multiple terminal themes;
+- plain output;
+- JSON and YAML output for automation;
+- shell completion.
+
+---
+
+## Requirements and installation
+
+### Requirements
+
+- Python 3.10 or later
+- system `git` executable
+- network access to the configured Git sources
+- network access to the RaaS server
+- a RaaS account with the required RPC, file-server, job, and targeting permissions
+
+### Install from a wheel
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python3 -m pip install --upgrade pip
-python3 -m pip install .
 
-scc --version
+python3 -m pip install --upgrade pip
+python3 -m pip install salt_config_cli-<version>-py3-none-any.whl
 ```
 
-The package installs equivalent `scc`, `salt-config`, and `raas` entry points.
+### Install from source
 
-## Five-minute onboarding
+```bash
+git clone <salt-config-cli-repository-url>
+cd salt-config-cli
+
+python3 -m venv .venv
+source .venv/bin/activate
+
+python3 -m pip install --upgrade pip
+python3 -m pip install .
+```
+
+Verify the installation:
+
+```bash
+scc --version
+scc --help
+```
+
+Equivalent entry points may also be installed:
+
+```text
+scc
+salt-config
+raas
+```
+
+---
+
+## Five-minute quick start
 
 ### 1. Create a RaaS connection profile
 
 ```bash
-scc connect --name lab
-scc profile use lab
-scc profile test lab
+scc configure --name lab
 ```
 
-The password or CSP token is stored separately in the OS keychain. Profile YAML contains only non-secret connection settings.
+Store the credential securely:
 
-### 2. Configure the Git sources
+```bash
+scc profile login lab
+```
 
-The guided setup is the easiest path:
+Select and test the profile:
+
+```bash
+scc profile use lab
+scc profile test lab
+scc status
+scc doctor
+```
+
+### 2. Register the Git sources
+
+Guided setup:
 
 ```bash
 scc repo setup
-scc repo test --all
 ```
 
-A non-interactive equivalent is:
+Non-interactive example:
 
 ```bash
-scc repo add vcf-salt \
+scc repo add shared-states \
   --kind states \
-  --url https://git.example.com/shared/vcf-salt.git \
-  --ref main \
-  --root vcf-infra \
+  --url https://git.example.com/platform/shared-salt-content.git \
+  --ref v1.0.0 \
+  --root salt \
   --layout '{resource}' \
   --default
+```
 
-scc repo add customer-values \
+```bash
+scc repo add environment-values \
   --kind data \
-  --url ssh://git@git.example.com/customer/config-values.git \
+  --url ssh://git@git.example.com/operations/config-values.git \
   --ref main \
+  --root . \
   --layout '{environment}/{version}/{resource}/values.yaml' \
   --auth ssh \
   --default
 ```
 
-Repository metadata is stored in a separate file, normally `~/.scc/repositories.yaml` next to the RaaS profile configuration. It can also be workspace-specific at `./.scc/repositories.yaml`.
-
-For private repositories, SCC reuses normal Git mechanisms:
-
-- SSH agent and `known_hosts` with `--auth ssh`
-- Git credential helper with `--auth credential-helper`
-- OS keychain token with `--auth token` and `scc repo login <source>`
-- source-specific environment variable such as `SCC_GIT_TOKEN_CUSTOMER_VALUES`
-
-Tokens are never stored in YAML or embedded into the repository URL.
-
-### 3. Ask SCC for a plan
+Test access:
 
 ```bash
-scc deploy dns \
-  --environment prod \
-  --version 9.1.1
+scc repo test --all
+scc repo list
 ```
 
-The default mode is `plan`. SCC:
-
-- fetches the configured refs using the system Git client;
-- resolves the complete state resource tree recursively;
-- resolves the private environment/version `values.yaml` file;
-- validates path safety, UTF-8 content, YAML, symlinks, and package limits;
-- creates a local review workspace;
-- displays source URLs, refs, exact commits, selected values path, entrypoint, file sizes, and SHA-256 hashes;
-- makes **no RaaS changes**.
-
-No approval artifact is created. The customer repository's pull-request and protected-branch workflow remains the approval mechanism.
-
-### 4. Publish and run safely
+### 3. Generate a no-change plan
 
 ```bash
 scc deploy dns \
-  --environment prod \
-  --version 9.1.1 \
+  --environment production \
+  --version 1.0.0
+```
+
+`plan` is the default. It performs local Git retrieval and validation without changing RaaS.
+
+### 4. Run a dry-run
+
+```bash
+scc deploy dns \
+  --environment production \
+  --version 1.0.0 \
   --mode dry-run \
-  --target-group vcf-prod
+  --target-group production-servers
 ```
 
-This single command uploads the reusable state tree and submits `state.apply` directly to the selected target group with `test=True`. RaaS returns a JID, which SCC monitors and renders per target.
+This publishes only the reusable state tree and calls `state.apply` with `test=True`.
 
-Customer `values.yaml` content is passed as execution-scoped pillar data. It is not uploaded to the RaaS file server and no persistent saved job is created. Use `--save-job` only when a reusable RaaS job is explicitly required; that saved job is kept safe with `test=True` and contains no customer values.
-
-### 5. Apply after Git approval
-
-After the customer configuration change is reviewed and merged in Git, and the dry-run result is accepted:
+### 5. Apply after review
 
 ```bash
 scc deploy dns \
-  --environment prod \
-  --version 9.1.1 \
+  --environment production \
+  --version 1.0.0 \
   --mode apply \
-  --target-group vcf-prod
+  --target-group production-servers
 ```
 
-SCC refreshes the configured Git refs by default, validates the content again, displays the resolved state and values commit IDs, target group, and `test=False`, then requires explicit `apply` confirmation **before** publishing files or submitting the direct execution. For reproducible production execution, configure an approved tag or commit SHA instead of a moving branch.
+SCC displays the resolved commits, values path, state, Salt environment, target group, and `test=False`, then requires explicit confirmation.
+
+---
+
+## Connection profiles
+
+Profiles keep connection settings for multiple RaaS environments.
+
+```bash
+scc configure --name lab
+scc configure --name staging
+scc configure --name production
+```
+
+Profile operations:
+
+```bash
+scc profile list
+scc profile show lab
+scc profile use lab
+scc profile login lab
+scc profile test lab
+```
+
+Use a profile for one command:
+
+```bash
+scc --profile production status
+```
+
+Select through an environment variable:
+
+```bash
+export SCC_PROFILE=production
+scc status
+```
+
+A profile normally contains only non-secret settings such as:
+
+```yaml
+version: 2
+default_profile: lab
+
+profiles:
+  lab:
+    server_url: https://raas-lab.example.com
+    username: automation-user
+    auth: password
+    ssl_verify: true
+    timeout: 60
+    default_environment: base
+    default_target: "*"
+    default_target_type: glob
+```
+
+Passwords and tokens should be stored through the OS keychain, secure environment variables, stdin, a protected file, or a masked prompt. They should not be stored in profile YAML.
+
+---
+
+## Git repository model
+
+SCC maintains a non-secret repository source catalog.
+
+Repository kinds:
+
+| Kind | Purpose |
+|---|---|
+| `states` | Reusable Salt state trees, templates, defaults, and supporting files |
+| `data` | Environment-, version-, or instance-specific YAML values |
+
+Common operations:
+
+```bash
+scc repo setup
+scc repo add <name> --kind states|data --url <url>
+scc repo list
+scc repo show <name>
+scc repo use <name>
+scc repo test <name>
+scc repo test --all
+scc repo sync <name>
+scc repo sync --all
+scc repo login <name>
+scc repo logout <name>
+scc repo export --output repositories.yaml
+scc repo import repositories.yaml
+scc repo remove <name>
+scc repo path
+```
+
+Repository export and import contain non-secret metadata only.
+
+### Authentication modes
+
+#### SSH
+
+```bash
+scc repo add private-values \
+  --kind data \
+  --url ssh://git@git.example.com/team/config-values.git \
+  --auth ssh
+```
+
+SCC relies on the normal SSH agent, keys, and `known_hosts`.
+
+#### Git credential helper
+
+```bash
+scc repo add shared-states \
+  --kind states \
+  --url https://git.example.com/team/salt-content.git \
+  --auth credential-helper
+```
+
+#### OS-keychain token
+
+```bash
+scc repo add private-values \
+  --kind data \
+  --url https://git.example.com/team/config-values.git \
+  --auth token
+
+scc repo login private-values
+```
+
+A source-specific environment variable can also be used:
+
+```bash
+export SCC_GIT_TOKEN_PRIVATE_VALUES='<token>'
+```
+
+Repository tokens are not stored in repository YAML or embedded in URLs.
+
+---
 
 ## Repository layouts
 
-Example reusable state repository:
+SCC does not require the repository names or folder names shown below. They are only examples.
+
+### Reusable Salt content
 
 ```text
-vcf-salt/
-└── vcf-infra/
+shared-salt-content/
+└── salt/
     ├── dns/
     │   ├── dns.sls
-    │   ├── defaults.yaml
+    │   ├── default.yaml
     │   ├── map.jinja
     │   └── files/
-    │       └── resolv.conf.jinja
-    └── ntp/
-        ├── ntp.sls
-        ├── defaults.yaml
+    │       └── resolver.conf.jinja
+    ├── ntp/
+    │   ├── ntp.sls
+    │   ├── default.yaml
+    │   └── map.jinja
+    └── application-role/
+        ├── application-role.sls
+        ├── default.yaml
         └── map.jinja
 ```
 
-Example private customer-values repository:
+Register this structure with:
+
+```bash
+scc repo add shared-states \
+  --kind states \
+  --url https://git.example.com/platform/shared-salt-content.git \
+  --ref v1.0.0 \
+  --root salt \
+  --layout '{resource}' \
+  --default
+```
+
+For resource `dns`, SCC resolves:
 
 ```text
-customer-values/
-├── prod/
-│   ├── 9.1.1/
-│   │   ├── cluster-drs/
-│   │   │   └── values.yaml
-│   │   └── cluster-ha/
-│   │       └── values.yaml
-│   └── 9.1.2/
-│       └── cluster-drs/
+Repository directory: salt/dns
+Default entrypoint:   salt/dns/dns.sls
+Salt state:           salt.dns.dns
+```
+
+An alternate structure can be configured by changing `--root` and `--layout`.
+
+### Environment-specific values
+
+```text
+config-values/
+├── development/
+│   └── 1.0.0/
+│       ├── dns/
+│       │   └── values.yaml
+│       └── ntp/
 │           └── values.yaml
-└── staging/
-    └── 9.1.1/
-        └── cluster-drs/
+├── staging/
+│   └── 1.0.0/
+│       └── dns/
+│           └── values.yaml
+└── production/
+    └── 1.0.0/
+        ├── dns/
+        │   └── values.yaml
+        └── application-role/
             └── values.yaml
 ```
 
-The preferred values-source layout is:
+Recommended layout:
 
 ```text
 {environment}/{version}/{resource}/values.yaml
 ```
 
-Other supported placeholders are `{resource}`, `{environment}`, `{version}`, and `{values}`. An explicit file can be selected with `--values-path` (`--data-path` remains a compatibility alias).
-
-## RaaS publication and execution model
-
-SCC publishes only the reusable state directory from the open-source repository. For example:
+Supported placeholders include:
 
 ```text
-Git:  saltext-vcf/vcf-infra/cluster-drs/
-RaaS: /vcf-infra/cluster-drs/
+{resource}
+{environment}
+{version}
+{values}
 ```
 
-The customer `values.yaml` file stays in the customer repository. During dry-run or apply SCC parses it and passes the resulting mapping as runtime pillar in the direct `state.apply` request. Every execution creates a normal RaaS runtime job/JID for monitoring, but not a persistent saved-job definition.
-
-```text
-values.yaml ──> execution-scoped pillar ──> state.apply ──> target group ──> JID/results
-```
-
-Optional reusable job creation is explicit:
+An explicit path can be selected with:
 
 ```bash
-scc deploy cluster-drs \
-  --environment prod \
-  --version 9.1.1 \
+scc deploy dns \
+  --values-path production/current/dns/approved-values.yaml
+```
+
+`--data-path` remains a compatibility alias.
+
+### Values example
+
+```yaml
+dns:
+  servers:
+    - 10.10.10.10
+    - 10.10.10.11
+  search_domains:
+    - example.com
+  timeout: 5
+  attempts: 3
+```
+
+The exact keys are owned by the selected Salt resource and its validation contract.
+
+---
+
+## Deployment modes
+
+```bash
+scc deploy <resource> [options]
+```
+
+| Mode | RaaS file-server change | Salt execution | Test flag | Confirmation |
+|---|---:|---:|---:|---:|
+| `plan` | No | No | N/A | No |
+| `publish` | Yes | No | N/A | May be required for overwrite |
+| `dry-run` | Yes | Yes | `test=True` | Review target and plan |
+| `apply` | Yes | Yes | `test=False` | Explicit apply confirmation |
+
+### Plan
+
+```bash
+scc deploy dns \
+  --environment production \
+  --version 1.0.0 \
+  --mode plan
+```
+
+A plan:
+
+- fetches the configured Git references;
+- resolves exact commits;
+- resolves the complete resource tree;
+- resolves the selected values file;
+- checks path traversal and symlink safety;
+- validates text encoding and YAML;
+- validates file and package limits;
+- computes hashes;
+- displays the state entrypoint and publication path;
+- creates a local review workspace;
+- makes no RaaS changes.
+
+### Publish only
+
+```bash
+scc deploy dns \
+  --environment production \
+  --version 1.0.0 \
+  --mode publish
+```
+
+This uploads the reusable state tree but does not run it.
+
+### Dry-run
+
+```bash
+scc deploy dns \
+  --environment production \
+  --version 1.0.0 \
   --mode dry-run \
-  --target-group prod-vcenters \
+  --target-group production-servers
+```
+
+Dry-run:
+
+- validates and publishes the state tree;
+- passes values as execution-scoped pillar;
+- invokes `state.apply`;
+- sets `test=True`;
+- returns a RaaS JID;
+- monitors execution;
+- displays per-target changes and failures.
+
+### Apply
+
+```bash
+scc deploy dns \
+  --environment production \
+  --version 1.0.0 \
+  --mode apply \
+  --target-group production-servers
+```
+
+Apply:
+
+- refreshes the configured Git references by default;
+- validates the content again;
+- displays exact state and values commit IDs;
+- displays the target group and `test=False`;
+- requires explicit confirmation;
+- publishes the reusable state tree;
+- invokes `state.apply`;
+- returns and monitors the new JID;
+- displays per-target results.
+
+For reproducible production execution, use an approved tag or commit SHA instead of a moving branch.
+
+### Useful deployment options
+
+```text
+--states-source <name>       Select the state repository.
+--values-source <name>       Select the values repository.
+--without-data               Use state defaults without values.
+--environment <name>         Resolve the environment placeholder.
+--version <value>            Resolve the version placeholder.
+--values <name>              Resolve the values placeholder.
+--values-path <path>         Select an explicit YAML file.
+--entrypoint <file.sls>      Select a non-default SLS entrypoint.
+--target-group <name>        Select an existing RaaS target group.
+--salt-env <name>            Select the RaaS file-server environment.
+--remote-path <path>         Override the publication path.
+--values-mode runtime        Pass values as execution-scoped pillar.
+--values-mode pillar         Persist values as a RaaS pillar.
+--values-mode none           Do not pass values.
+--save-job                   Create or update a reusable safe saved job.
+--wait <seconds>             Wait for completion; 0 waits indefinitely.
+--refresh / --no-refresh     Control Git refresh.
+--force                      Allow state-file overwrite.
+--yes                        Skip confirmations in trusted automation only.
+```
+
+The recommended values mode is `runtime`.
+
+---
+
+## End-to-end execution flow
+
+### Planning phase
+
+```text
+1. Resolve active connection profile
+2. Load repository source catalog
+3. Select state source
+4. Fetch and resolve its Git reference
+5. Resolve the resource directory and entrypoint
+6. Validate the complete resource tree
+7. Select the values source
+8. Fetch and resolve its Git reference
+9. Resolve and validate values.yaml
+10. Display commits, paths, hashes, target, and execution mode
+```
+
+### Publication phase
+
+```text
+Reusable state directory
+        ↓
+validated local workspace
+        ↓
+RaaS file-server environment
+```
+
+Only reusable Salt content is published in the normal workflow.
+
+### Execution phase
+
+```text
+State reference
++ execution-scoped values
++ target group
++ test=True or test=False
+        ↓
+RaaS state.apply
+        ↓
+Runtime JID
+        ↓
+Per-target status and results
+```
+
+### Saved jobs
+
+Direct execution is the default and does not create a persistent saved-job definition.
+
+Create a reusable safe saved job only when required:
+
+```bash
+scc deploy dns \
+  --environment production \
+  --version 1.0.0 \
+  --mode dry-run \
+  --target-group production-servers \
   --save-job
 ```
 
-The saved job contains only the state reference, Salt environment, target group, and `test=True`. It never contains customer values.
+The saved job should remain safe with `test=True`. Customer values are not stored in it.
 
-## Static KB-to-Salt solution catalog
+---
 
-KB mappings are maintained in the reusable `saltext-vcf` repository beside the existing resource states. The mapping is static, Git-reviewed, and read-only at runtime. SCC and the Config AI Agent never generate a KB-to-SLS relationship.
+## Target groups
 
-The existing state layout stays unchanged:
+Target groups define which minions receive a module or state execution.
+
+List groups:
+
+```bash
+scc target-group-list
+```
+
+Create a glob-based group:
+
+```bash
+scc target-group-create web-servers \
+  --target 'web-*' \
+  --target-type glob \
+  --description 'Production web-server minions'
+```
+
+Create a list-based group:
+
+```bash
+scc target-group-create selected-servers \
+  --target 'server-01,server-02' \
+  --target-type list
+```
+
+Create a grain-based group:
+
+```bash
+scc target-group-create database-servers \
+  --target 'role:database' \
+  --target-type grain
+```
+
+Before dry-run or apply, verify that the group contains only the intended targets.
+
+---
+
+## KB-to-Salt solution catalog
+
+SCC can search a static, Git-reviewed mapping between knowledge-base entries and existing Salt states.
+
+The catalog is stored in the reusable-state repository, typically as:
 
 ```text
-saltext-vcf/
-├── vcf-infra/
-│   ├── dns/
-│   │   ├── dns.sls
-│   │   ├── default.yaml
-│   │   └── map.jinja
-│   └── ntp/
-│       ├── ntp.sls
+repository-root/
+├── salt/
+│   └── <resource>/
+│       ├── <resource>.sls
 │       ├── default.yaml
 │       └── map.jinja
 └── solutions/
     ├── catalog.yaml
     ├── schemas/
-    │   ├── dns-values.schema.yaml
-    │   └── ntp-values.schema.yaml
-    ├── kb-<id>/
-    │   └── solution.yaml
+    │   └── <resource>-values.schema.yaml
     └── kb-<id>/
         └── solution.yaml
 ```
 
-Each `solution.yaml` maps one KB to one existing resource state:
+The folder name used for Salt states is not fixed. The mapped dotted state and optional entrypoint identify the existing resource.
 
-```yaml
-execution:
-  state: vcf-infra.dns.dns
-  description: Apply approved DNS configuration.
-  values_schema: solutions/schemas/dns-values.schema.yaml
-  dry_run_supported: true
-```
-
-SCC derives the resource (`dns`) and SLS (`dns.sls`) from the dotted state. Optional `resource` and `entrypoint` overrides are available only for repositories that do not follow the standard folder/file convention.
+Use the installed SCC release to create a schema-compatible example:
 
 ```bash
-scc kb list
-scc kb search "DNS lookup failed" --component "NSX Manager" --version 9.1.1
-scc kb show <kb-id>
-scc kb validate
-scc kb plan <kb-id> --environment prod --version 9.1.1
-scc kb execute <kb-id> --environment prod --version 9.1.1 --target-group prod-nsx --mode dry-run
-```
-
-For apply, SCC requires an applicable validated/verified catalog entry and explicit confirmation:
-
-```bash
-scc kb execute <kb-id>   --environment prod   --version 9.1.1   --target-group prod-nsx   --mode apply
-```
-
-Only the reusable state folder is published to the RaaS file server. Customer `values.yaml` remains in the private repository and is passed as execution-scoped pillar. KB execution uses one direct runtime RaaS job/JID and does not create a persistent saved job.
-
-The Config AI Agent can use the same read-only contract through JSON:
-
-```bash
-scc kb search "time synchronization failed" --json
-scc kb show <kb-id> --json
-```
-
-Bundled fictional DNS/NTP examples are available for authoring and UX testing:
-
-```bash
-scc kb list --demo
-scc kb validate --demo
 scc kb scaffold ./kb-catalog-example
 ```
 
-The demo IDs and URLs are deliberately fictional and must not be presented as Broadcom-supported resolutions.
+Validate and search:
 
-## Guided learning
+```bash
+scc kb validate
+scc kb list
+scc kb search 'name resolution failed'
+scc kb show <solution-id>
+```
 
-The tutorials are network-free explanations. They print the commands but do not execute them.
+Plan a mapped state:
+
+```bash
+scc kb plan <solution-id> \
+  --environment production \
+  --version 1.0.0
+```
+
+Execute it safely:
+
+```bash
+scc kb execute <solution-id> \
+  --environment production \
+  --version 1.0.0 \
+  --target-group production-servers \
+  --mode dry-run
+```
+
+Apply after review:
+
+```bash
+scc kb execute <solution-id> \
+  --environment production \
+  --version 1.0.0 \
+  --target-group production-servers \
+  --mode apply
+```
+
+KB behavior:
+
+- the mapping is static and read-only at runtime;
+- SCC does not infer or generate a state mapping;
+- the mapped state must already exist;
+- the entry must pass catalog validation;
+- apply requires explicit confirmation;
+- the normal repository, publication, values, target-group, and JID flow is reused.
+
+Structured output:
+
+```bash
+scc kb search 'time synchronization failed' --json
+scc kb show <solution-id> --json
+```
+
+---
+
+## Low-level RaaS operations
+
+The high-level Git workflow does not remove access to individual RaaS capabilities.
+
+### Browse server resources
+
+```bash
+scc list --type minions
+scc fs-list --env base
+scc target-group-list
+scc pillar-list
+scc job-list
+```
+
+### Execute Salt modules
+
+Read-only examples:
+
+```bash
+scc exec test.ping --target '*'
+scc exec grains.get --target 'server-01' --arg os
+```
+
+### Upload and download file-server content
+
+```bash
+scc upload ./salt/dns \
+  --path /salt/dns \
+  --env base
+```
+
+```bash
+scc download /salt/dns \
+  --output ./downloaded \
+  --env base \
+  --recursive
+```
+
+### Run a state manually
+
+Test mode:
+
+```bash
+scc run /salt/dns/dns.sls \
+  --target-group production-servers \
+  --env base \
+  --test
+```
+
+Apply mode:
+
+```bash
+scc run /salt/dns/dns.sls \
+  --target-group production-servers \
+  --env base \
+  --no-test
+```
+
+Potentially mutating operations require confirmation. Manual state execution defaults to test mode.
+
+### Saved jobs
+
+```bash
+scc job-list
+scc job-create
+scc job-run <job-id>
+scc job-status <jid>
+scc job-results <jid>
+scc job-delete <job-id>
+```
+
+### Pillars
+
+```bash
+scc upload-pillar ./pillar.yaml
+scc pillar-list
+scc pillar-assign
+scc pillar-refresh
+```
+
+Use persistent RaaS pillars only when persistence is explicitly required. The high-level deployment flow uses execution-scoped values by default.
+
+### Advanced RPC
+
+```bash
+scc rpc <method> [arguments]
+```
+
+Raw RPC is an expert escape hatch. It bypasses some high-level workflow protections and should be restricted to reviewed operational procedures.
+
+---
+
+## Tutorials and command discovery
+
+Guided tutorials print the workflow and commands without performing network operations.
 
 ```bash
 scc tutorial
+scc tutorial list
 scc tutorial dns
 scc tutorial kb-search
 scc tutorial gitops
 scc tutorial workflow
-scc tutorial kb
 scc tutorial pull
 scc tutorial pull-data
 scc tutorial upload
@@ -351,20 +1035,13 @@ scc tutorial job-create
 scc tutorial job-run
 ```
 
-The two recommended first-time customer journeys are:
+Non-interactive tutorial output:
 
 ```bash
-# Add the saltext-vcf and customer-values repositories, then deploy DNS
 scc tutorial dns --non-interactive
-
-# Search a static KB mapping and execute the mapped DNS state safely
-scc tutorial kb-search --non-interactive
 ```
 
-These tutorials do not make network calls. The complete written journeys are in
-[`docs/CUSTOMER_JOURNEYS.md`](docs/CUSTOMER_JOURNEYS.md).
-
-Useful discovery commands:
+Command discovery:
 
 ```bash
 scc
@@ -375,117 +1052,70 @@ scc help deploy
 scc workflow
 ```
 
-## Git source management
+Shell completion:
 
 ```bash
-scc repo setup
-scc repo add <name> --kind states|data --url <url>
-scc repo list
-scc repo show <name>
-scc repo use <name>
-scc repo test <name>
-scc repo test --all
-scc repo sync --all
-scc repo login <name>
-scc repo logout <name>
-scc repo export --output repositories.yaml
-scc repo import repositories.yaml
-scc repo remove <name>
-scc repo path
+scc completion
 ```
 
-`repo export` and `repo import` contain non-secret metadata only, making them suitable for onboarding and review.
+---
 
-The older `scc configure-git`, `scc pull`, and `scc pull-data` commands remain available for compatibility and advanced/manual operation. They now use the same generic Git/cache service; they are no longer GitHub raw-file implementations. New users should normally start with `scc repo setup` and `scc deploy`.
+## Themes and structured output
 
-## Low-level operations
-
-SCC does not remove access to individual RaaS steps:
-
-```bash
-# Browse
-scc list --type minions
-scc fs-list --env base
-scc target-group-list
-scc pillar-list
-scc job-list
-
-# Read-only Salt execution
-scc exec test.ping --target '*'
-scc exec grains.get --target '<minion>' --arg os
-
-# Manual file-server operation
-scc upload ./states/cluster-drs --path /vcf-infra/cluster-drs --env base
-scc download /dns --output ./downloaded --env base --recursive
-
-# Manual state operation; test mode is the default
-scc run /vcf-infra/cluster-drs/cluster-drs.sls --target-group vcf-prod --env base --test
-scc run /vcf-infra/cluster-drs/cluster-drs.sls --target-group vcf-prod --env base --no-test
-```
-
-Potentially mutating commands require explicit confirmation. State execution defaults to `test=True`.
-
-## Connection profiles
-
-```bash
-scc configure --name lab
-scc profile login lab
-scc profile list
-scc profile show lab
-scc profile use lab
-scc profile test lab
-scc --profile production status
-```
-
-Environment selection is also supported:
-
-```bash
-export SCC_PROFILE=production
-scc status
-```
-
-## Themes and plain mode
+Themes:
 
 ```bash
 scc theme list
 scc theme preview --all
 scc theme use enterprise
-scc theme disable       # persistent plain terminal mode
+scc theme disable
 scc theme enable ocean
 scc --theme plain status
 ```
 
-Available themes include `ocean`, `enterprise`, `graphite`, `forest`, `amber`, `high-contrast`, and `plain`. JSON and YAML output remain undecorated regardless of theme.
-
-## Configuration files and secrets
-
-By default:
+Available themes may include:
 
 ```text
-~/.scc/config.yaml          # non-secret RaaS profiles and global UX settings
-~/.scc/repositories.yaml    # non-secret Git source metadata
-~/.cache/salt-config-cli/   # private shallow Git cache and session data
-.scc/work/                  # validated local deployment workspaces
+ocean
+enterprise
+graphite
+forest
+amber
+high-contrast
+plain
 ```
 
-Credentials are resolved separately from:
+JSON and YAML output remain undecorated regardless of theme.
 
-- OS keychain;
-- SSH agent / Git credential helper;
-- source-specific environment variables;
-- stdin, a protected file, or masked prompt when explicitly requested.
-
-Legacy `git_*` fields in an older connection file are read only for migration into `repositories.yaml`. New commands do not write Git metadata into the RaaS profile file.
-
-## Automation
-
-Use explicit structured output where available:
+Examples:
 
 ```bash
 scc repo list --json
-scc deploy dns --environment prod --version 9.1.1 --mode plan
+scc kb search 'dns failure' --json
 scc exec test.ping --target '*' --output json
 ```
+
+---
+
+## Configuration files and environment variables
+
+Default paths:
+
+```text
+~/.scc/config.yaml
+~/.scc/repositories.yaml
+~/.cache/salt-config-cli/
+.scc/work/
+```
+
+Purpose:
+
+| Path | Content |
+|---|---|
+| `~/.scc/config.yaml` | Non-secret RaaS profiles and global UX settings |
+| `~/.scc/repositories.yaml` | Non-secret Git source metadata |
+| `~/.cache/salt-config-cli/` | Private shallow Git cache and session data |
+| `.scc/work/` | Validated local plan and deployment workspaces |
 
 Useful environment variables:
 
@@ -499,31 +1129,333 @@ SCC_GIT_TIMEOUT
 SCC_GIT_TOKEN_<SOURCE_NAME>
 ```
 
-For production pipelines, pin repository sources to an approved tag or commit SHA and retain the SCC execution output or RaaS job/JID with the change record.
+Credential resolution can use:
 
-## Development
+- OS keychain;
+- SSH agent;
+- Git credential helper;
+- source-specific environment variables;
+- masked prompt;
+- stdin;
+- protected password file.
+
+Avoid command-line password arguments because they can appear in shell history and process listings.
+
+---
+
+## Security and safety model
+
+### Secrets
+
+SCC keeps secrets separate from normal YAML configuration.
+
+Do not commit:
+
+- RaaS passwords;
+- access tokens;
+- SSH private keys;
+- customer credentials;
+- secrets inside `values.yaml`;
+- tokens embedded in Git URLs.
+
+### Git provenance
+
+For each deployment, SCC should show or retain:
+
+- source name;
+- repository URL;
+- configured Git reference;
+- exact resolved commit;
+- selected state path;
+- selected values path;
+- file hashes;
+- target group;
+- Salt environment;
+- execution mode;
+- RaaS JID.
+
+### Content validation
+
+Before publication, SCC validates:
+
+- repository-relative path safety;
+- symlink behavior;
+- regular-file content;
+- UTF-8 encoding;
+- YAML syntax;
+- recursive resource-tree boundaries;
+- file and package limits;
+- entrypoint existence;
+- optional values-schema compatibility.
+
+### Execution controls
+
+- plan before execution;
+- dry-run before apply;
+- explicit confirmation for apply;
+- existing target groups rather than implicit broad targeting;
+- state publication separated from customer values;
+- direct JID-based execution by default;
+- saved jobs only by explicit request;
+- pinned tags or commits for production;
+- `--yes` only in trusted, reviewed automation.
+
+---
+
+## Automation and CI/CD
+
+Use non-interactive commands, pinned repository references, and structured output.
+
+Example validation stage:
+
+```bash
+scc repo test --all
+scc kb validate
+scc deploy dns \
+  --environment production \
+  --version 1.0.0 \
+  --mode plan
+```
+
+Example dry-run stage:
+
+```bash
+scc deploy dns \
+  --environment production \
+  --version 1.0.0 \
+  --mode dry-run \
+  --target-group production-servers \
+  --yes
+```
+
+Example apply stage:
+
+```bash
+scc deploy dns \
+  --environment production \
+  --version 1.0.0 \
+  --mode apply \
+  --target-group production-servers \
+  --yes
+```
+
+Use `--yes` only after external pipeline approval and only when repositories are pinned to reviewed tags or commits.
+
+Retain the following with the change record:
+
+- pipeline run ID;
+- state commit;
+- values commit;
+- execution plan;
+- target group;
+- RaaS JID;
+- per-target result summary.
+
+---
+
+## Troubleshooting
+
+### Check overall readiness
+
+```bash
+scc status
+scc doctor
+```
+
+### Test a profile
+
+```bash
+scc profile test <profile-name>
+```
+
+### Test Git sources
+
+```bash
+scc repo test --all
+```
+
+### Refresh repository caches
+
+```bash
+scc repo sync --all
+```
+
+### Inspect source configuration
+
+```bash
+scc repo list
+scc repo show <source-name>
+scc repo path
+```
+
+### Run with debug logging
+
+```bash
+scc --profile lab status --log-level DEBUG
+```
+
+For a subcommand that supports local logging options:
+
+```bash
+scc repo test --all --log-level DEBUG
+```
+
+### Common problems
+
+#### Repository authentication failure
+
+Check:
+
+- SSH agent has the expected key;
+- host key exists in `known_hosts`;
+- Git credential helper is configured;
+- keychain token is present;
+- source-specific token environment variable is correctly named;
+- repository URL does not contain an expired embedded token.
+
+#### Repository path not found
+
+Check the configured:
+
+- `root`;
+- `layout`;
+- environment;
+- version;
+- resource;
+- explicit values path;
+- Git branch, tag, or commit.
+
+#### Target group not found or empty
+
+```bash
+scc target-group-list
+```
+
+Confirm the group exists in the active RaaS profile and contains the intended minions.
+
+#### File already exists in RaaS
+
+Review the existing file and planned hash. Use `--force` only after confirming overwrite is safe.
+
+#### Dry-run succeeds but apply fails
+
+Compare:
+
+- resolved Git commits;
+- target-group membership;
+- credentials and permissions;
+- state behavior when `test=False`;
+- minion connectivity;
+- file-server environment;
+- runtime pillar content;
+- timeout and job result details.
+
+#### Job timeout
+
+Increase the wait period:
+
+```bash
+scc deploy dns \
+  --environment production \
+  --version 1.0.0 \
+  --mode dry-run \
+  --target-group production-servers \
+  --wait 3600
+```
+
+Retrieve results later:
+
+```bash
+scc job-status <jid>
+scc job-results <jid>
+```
+
+#### Clear cached authentication
+
+```bash
+scc clear-cache
+```
+
+---
+
+## Development and release
+
+Install development dependencies:
 
 ```bash
 python3 -m pip install -e '.[dev]'
+```
+
+Run quality checks:
+
+```bash
 pytest -q
 ruff check .
 python -m compileall -q salt_config_cli
 python scripts/check_release.py
+```
+
+Build release artifacts:
+
+```bash
 python -m build
 ```
 
-See:
+Expected Python distribution artifacts:
 
-- [`docs/GITOPS_WORKFLOW.md`](docs/GITOPS_WORKFLOW.md)
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- [`docs/SAFETY_MODEL.md`](docs/SAFETY_MODEL.md)
-- [`docs/RAAS_COMPATIBILITY.md`](docs/RAAS_COMPATIBILITY.md)
-- [`SECURITY.md`](SECURITY.md)
+```text
+dist/salt_config_cli-<version>-py3-none-any.whl
+dist/salt_config_cli-<version>.tar.gz
+```
 
-## Open-source contribution
+Publish SHA-256 checksums with release archives:
 
-Contributions are welcome. Keep command behavior backward compatible where practical, keep secrets out of examples and tests, and add tests for new safety or RPC behavior. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+```bash
+sha256sum dist/* > SHA256SUMS
+```
+
+Recommended supporting documentation:
+
+```text
+docs/ARCHITECTURE.md
+docs/GITOPS_WORKFLOW.md
+docs/SAFETY_MODEL.md
+docs/RAAS_COMPATIBILITY.md
+docs/KB_SOLUTION_CATALOG.md
+docs/CUSTOMER_JOURNEYS.md
+SECURITY.md
+CONTRIBUTING.md
+CHANGELOG.md
+```
+
+---
+
+## Contributing
+
+Contributions should:
+
+- keep command behavior backward compatible where practical;
+- preserve fail-safe defaults;
+- keep secrets out of examples and tests;
+- keep repository handling generic;
+- add tests for new safety behavior;
+- add tests for new RaaS RPC behavior;
+- document new configuration fields and environment variables;
+- include release notes for user-visible changes.
+
+Typical workflow:
+
+```bash
+git checkout -b feature/<name>
+python3 -m pip install -e '.[dev]'
+pytest -q
+ruff check .
+git commit
+git push
+```
+
+---
 
 ## License
 
-Apache License 2.0. See [`LICENSE`](LICENSE).
+Apache License 2.0. See `LICENSE`.

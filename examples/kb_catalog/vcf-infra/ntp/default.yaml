@@ -1,3 +1,0 @@
-ntp:
-  servers: []
-  service_enabled: true

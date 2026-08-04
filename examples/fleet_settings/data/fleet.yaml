@@ -1,9 +1,0 @@
-dns:
-  servers:
-    - address: 192.0.2.53
-      primary: true
-    - address: 192.0.2.54
-      primary: false
-ntp:
-  servers:
-    - time.example.com
