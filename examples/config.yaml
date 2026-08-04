@@ -1,0 +1,27 @@
+# Named SCC connection profiles. Passwords and tokens never belong here.
+version: 2
+default_profile: lab
+theme: enterprise
+profiles:
+  lab:
+    server_url: https://raas-lab.example.com
+    username: automation-user
+    auth: password
+    config_name: internal
+    ssl_verify: true
+    timeout: 60
+    rpc_paths:
+      - /rpc
+      - /raas/rpc
+    default_environment: base
+    default_target: "*"
+    default_target_type: glob
+    theme: forest
+  production:
+    server_url: https://raas-prod.example.com
+    username: production-automation
+    auth: password
+    ssl_verify: true
+    timeout: 60
+    default_environment: base
+# Store credentials with `scc profile login <name>` or use SCC_PASSWORD.

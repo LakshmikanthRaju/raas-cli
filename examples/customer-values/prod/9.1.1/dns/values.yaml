@@ -1,0 +1,7 @@
+# Example private-repository data. Use documentation-only addresses.
+dns:
+  servers:
+    - 192.0.2.53
+    - 192.0.2.54
+  search_domains:
+    - example.invalid

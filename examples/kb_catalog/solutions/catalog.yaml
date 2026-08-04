@@ -1,0 +1,41 @@
+api_version: saltext.vcf/catalog/v1
+kind: KBSolutionCatalog
+catalog_version: 1.1.0
+
+solutions:
+  - solution_id: kb-demo-dns-001
+    kb_id: DEMO-DNS-001
+    title: VCF component disconnected because of DNS mismatch
+    summary: Apply approved DNS configuration through the existing DNS state.
+    components:
+      - NSX Manager
+      - SDDC Manager
+      - vCenter
+    versions:
+      - 9.1.x
+    symptoms:
+      - DNS lookup failed
+      - Component appears disconnected
+    status: validated
+    risk: medium
+    solution_path: kb-demo-dns/solution.yaml
+    state: vcf-infra.dns.dns
+
+  - solution_id: kb-demo-ntp-001
+    kb_id: DEMO-NTP-001
+    title: VCF time synchronization issue caused by NTP mismatch
+    summary: Apply approved NTP configuration through the existing NTP state.
+    components:
+      - ESXi
+      - vCenter
+      - NSX Manager
+      - SDDC Manager
+    versions:
+      - 9.1.x
+    symptoms:
+      - Clock skew
+      - Time synchronization failed
+    status: validated
+    risk: medium
+    solution_path: kb-demo-ntp/solution.yaml
+    state: vcf-infra.ntp.ntp

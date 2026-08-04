@@ -1,0 +1,38 @@
+# DNS Reachability Drift Detection Configuration
+#
+# Usage:
+#   1. Upload state file:  scc upload examples/dns-reachability.sls --env vcfsecops
+#   2. Run check:          scc drift -f examples/dns-reachability-drift.yaml
+#
+# This verifies DNS server connectivity and reports:
+#   - Ping reachability to each DNS server
+#   - DNS resolution tests for specified domains
+#   - Default gateway connectivity
+
+---
+resource_type: minion_state
+metadata:
+  name: dns-reachability-compliance
+  description: DNS server reachability and resolution verification
+spec:
+  state_file: /dns-reachability.sls
+  
+  # Target group to check
+  target_group: ops
+  
+  # Alternative: use direct target pattern
+  # target: "*"
+  # target_type: glob
+  
+  environment: vcfsecops
+  
+  pillar:
+    # DNS servers to check (leave empty to read from /etc/resolv.conf)
+    dns_servers:
+      - 192.0.2.53
+      - 192.0.2.54
+    
+    # Domains to test DNS resolution against
+    dns_test_domains:
+      - google.com
+      - vmware.com

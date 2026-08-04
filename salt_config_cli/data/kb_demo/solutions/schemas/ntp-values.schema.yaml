@@ -1,0 +1,11 @@
+api_version: saltext.vcf/values-schema/v1
+resource: ntp
+required:
+  - ntp.servers
+properties:
+  ntp.servers:
+    type: array
+    min_items: 1
+    item_type: string
+  ntp.service_enabled:
+    type: boolean

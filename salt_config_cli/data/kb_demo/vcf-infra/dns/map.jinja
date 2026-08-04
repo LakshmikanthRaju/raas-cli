@@ -1,0 +1,2 @@
+{% set defaults = salt['slsutil.renderer']('salt://vcf-infra/dns/default.yaml') %}
+{% set dns = salt['slsutil.merge'](defaults.get('dns', {}), pillar.get('dns', {})) %}

@@ -1,0 +1,32 @@
+# Disk Space Audit Drift Detection Configuration
+#
+# Usage:
+#   1. Upload state file:  scc upload examples/disk-space-audit.sls --env vcfsecops
+#   2. Run audit:          scc drift -f examples/disk-space-drift.yaml
+#
+# This checks log partition disk space and reports:
+#   - Current disk usage on log-related partitions
+#   - Large log files consuming space
+#   - Partitions exceeding warning/critical thresholds
+
+---
+resource_type: minion_state
+metadata:
+  name: disk-space-compliance
+  description: Log partition disk space audit and monitoring
+spec:
+  state_file: /disk-space-audit.sls
+  
+  # Target group to check
+  target_group: ops
+  
+  # Alternative: use direct target pattern
+  # target: "*"
+  # target_type: glob
+  
+  environment: vcfsecops
+  
+  pillar:
+    # Percentage thresholds for alerting
+    disk_warning_threshold: 80
+    disk_critical_threshold: 90

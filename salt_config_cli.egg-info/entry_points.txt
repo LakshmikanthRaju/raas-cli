@@ -1,0 +1,4 @@
+[console_scripts]
+raas = salt_config_cli.cli:main
+salt-config = salt_config_cli.cli:main
+scc = salt_config_cli.cli:main

@@ -1,0 +1,29 @@
+# NTP Drift Detection Configuration
+#
+# Usage:
+#   1. Upload state file:  scc upload examples/ntp-config.sls --env vcfsecops
+#   2. Check drift:        scc drift -f examples/ntp-drift.yaml
+#   3. Fix drift:          scc remediate -f examples/ntp-drift.yaml --auto-approve
+
+---
+resource_type: minion_state
+metadata:
+  name: ntp-compliance
+  description: NTP configuration compliance for ops target group
+spec:
+  state_file: /ntp-config.sls
+  
+  # Option 1: Use target group name (resolved from RaaS)
+  target_group: ops
+  
+  # Option 2: Use direct target pattern (uncomment to use instead)
+  # target: "*"
+  # target_type: glob
+  
+  environment: vcfsecops
+  pillar:
+    ntp_server: 192.0.2.11  # Change this to your NTP server
+    # Examples:
+    #   ntp_server: time.example.com
+    #   ntp_server: pool.ntp.org
+    #   ntp_server: 192.168.1.100

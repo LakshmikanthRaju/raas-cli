@@ -1,0 +1,60 @@
+api_version: saltext.vcf/v1
+kind: KBResolution
+
+metadata:
+  id: kb-demo-dns-001
+  title: VCF component disconnected because of DNS mismatch
+  description: >-
+    Fictional catalog example showing how a reviewed KB maps directly to the
+    existing DNS resource state.
+  status: validated
+  maturity: beta
+  maintainers:
+    - vcf-config-management
+  tags:
+    - dns
+    - connectivity
+    - name-resolution
+
+kb:
+  provider: example
+  id: DEMO-DNS-001
+  title: VCF component disconnected because of DNS mismatch
+  url: https://knowledge.example.invalid/kb/DEMO-DNS-001
+  last_verified: "2026-08-01"
+
+applicability:
+  products:
+    - VCF
+  components:
+    - NSX Manager
+    - SDDC Manager
+    - vCenter
+  versions:
+    - 9.1.x
+  symptoms:
+    - Component appears disconnected in VCF management
+    - FQDN lookup fails or returns an unexpected address
+    - DNS server or search-domain configuration is inconsistent
+  error_patterns:
+    - DNS lookup failed
+    - unable to resolve host
+    - manager is disconnected
+  prerequisites:
+    - Approved customer values exist for the selected environment and version
+    - The target group contains only the intended VCF components
+
+execution:
+  state: vcf-infra.dns.dns
+  description: Apply the approved DNS servers and search domains.
+  values_schema: solutions/schemas/dns-values.schema.yaml
+  dry_run_supported: true
+  reboot_required: false
+  service_restart_required: false
+
+risk:
+  level: medium
+  impact: Incorrect DNS values can temporarily disrupt VCF component connectivity.
+  requires_confirmation: true
+  rollback_supported: true
+  rollback_state: vcf-infra.dns.dns

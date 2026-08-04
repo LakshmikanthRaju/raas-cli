@@ -1,0 +1,22 @@
+# DNS Check Pillar Configuration
+#
+# This pillar data provides configuration for dns-reachability.sls state.
+#
+# Usage:
+#   scc run /dns-reachability.sls --target "*" --env vcfsecops --pillar-file salt_modules/pillars/dns_check.yaml
+#   scc run /dns-reachability.sls --target-group ops --env vcfsecops --pillar-file salt_modules/pillars/dns_check.yaml
+#
+# Or upload as pillar to RaaS:
+#   scc upload-pillar salt_modules/pillars/dns_check.yaml --target-group ops
+#   scc pillar-refresh --target "*"
+
+# DNS servers to ping for reachability check
+# If not specified, the state will read from /etc/resolv.conf
+dns_servers:
+  - 192.0.2.10
+
+# Domains to test DNS resolution against
+# Default: ['google.com', 'vmware.com']
+dns_test_domains:
+  - vcenter.example.com
+  - sddc-manager.example.com

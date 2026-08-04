@@ -1,0 +1,61 @@
+api_version: saltext.vcf/v1
+kind: KBResolution
+
+metadata:
+  id: kb-demo-ntp-001
+  title: VCF time synchronization issue caused by NTP mismatch
+  description: >-
+    Fictional catalog example showing how a reviewed KB maps directly to the
+    existing NTP resource state.
+  status: validated
+  maturity: beta
+  maintainers:
+    - vcf-config-management
+  tags:
+    - ntp
+    - time-sync
+    - clock-skew
+
+kb:
+  provider: example
+  id: DEMO-NTP-001
+  title: VCF time synchronization issue caused by NTP mismatch
+  url: https://knowledge.example.invalid/kb/DEMO-NTP-001
+  last_verified: "2026-08-01"
+
+applicability:
+  products:
+    - VCF
+  components:
+    - ESXi
+    - vCenter
+    - NSX Manager
+    - SDDC Manager
+  versions:
+    - 9.1.x
+  symptoms:
+    - Time synchronization alarms are reported
+    - Clock skew causes authentication or certificate failures
+    - NTP server configuration differs across VCF components
+  error_patterns:
+    - clock skew
+    - time synchronization failed
+    - NTP server unreachable
+  prerequisites:
+    - Approved customer values exist for the selected environment and version
+    - The target group contains only the intended VCF components
+
+execution:
+  state: vcf-infra.ntp.ntp
+  description: Apply the approved NTP servers and time-service settings.
+  values_schema: solutions/schemas/ntp-values.schema.yaml
+  dry_run_supported: true
+  reboot_required: false
+  service_restart_required: true
+
+risk:
+  level: medium
+  impact: Incorrect NTP values can affect authentication, certificates, and event ordering.
+  requires_confirmation: true
+  rollback_supported: true
+  rollback_state: vcf-infra.ntp.ntp

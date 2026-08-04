@@ -1,0 +1,39 @@
+# DNS Drift Detection Configuration
+#
+# Usage:
+#   1. Upload state file:  scc upload examples/dns-config.sls --env vcfsecops
+#   2. Check drift:        scc drift -f examples/dns-drift.yaml
+#   3. Fix drift:          scc remediate -f examples/dns-drift.yaml --auto-approve
+
+---
+resource_type: minion_state
+metadata:
+  name: dns-compliance
+  description: DNS resolver configuration compliance for ops target group
+spec:
+  state_file: /dns-config.sls
+  
+  # Option 1: Use target group name (resolved from RaaS)
+  target_group: ops
+  
+  # Option 2: Use direct target pattern (uncomment to use instead)
+  # target: "*"
+  # target_type: glob
+  
+  environment: vcfsecops
+  pillar:
+    dns_servers:
+      - 192.0.2.53
+      - 192.0.2.54
+    dns_search_domains:
+      - example.com
+      - corp.example.com
+    dns_options:
+      - timeout:2
+      - attempts:3
+    # Examples:
+    #   dns_servers:
+    #     - 8.8.8.8
+    #     - 8.8.4.4
+    #   dns_search_domains:
+    #     - mycompany.local

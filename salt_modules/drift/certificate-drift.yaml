@@ -1,0 +1,27 @@
+# Certificate Audit Drift Detection Configuration
+#
+# Usage:
+#   1. Upload state file:  scc upload examples/certificate-audit.sls --env vcfsecops
+#   2. Run audit:          scc drift -f examples/certificate-drift.yaml
+#
+# This checks for SSL/TLS certificates across all target minions and reports:
+#   - Certificate locations
+#   - Expiration dates and days remaining
+#   - Expired or expiring soon certificates
+
+---
+resource_type: minion_state
+metadata:
+  name: certificate-compliance
+  description: SSL/TLS certificate audit and expiration check
+spec:
+  state_file: /certificate-audit.sls
+  
+  # Target group to check
+  target_group: ops
+  
+  # Alternative: use direct target pattern
+  # target: "*"
+  # target_type: glob
+  
+  environment: vcfsecops

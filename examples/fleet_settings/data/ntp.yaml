@@ -1,0 +1,3 @@
+ntp:
+  servers:
+    - time.example.com

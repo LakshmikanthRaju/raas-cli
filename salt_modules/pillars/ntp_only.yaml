@@ -1,0 +1,27 @@
+# NTP-Only Compliance Pillar
+#
+# Pass this pillar file to run only NTP compliance check
+# using the existing compliance_control.sls
+#
+# Usage:
+#   scc run /states/compliance_control.sls --target-group vcenter --test --env vcfsecops --pillar-file pillar/ntp_only.yaml
+
+# vCenter credentials (required)
+vcenter:
+  host: vcenter.example.com
+  user: administrator@vsphere.local
+  password: REPLACE_WITH_SECRET_FROM_KEYRING_OR_VAULT
+  ssl_thumbprint: REPLACE_WITH_SERVER_CERTIFICATE_THUMBPRINT
+
+# Only NTP control - this overrides global.jinja to run ONLY NTP
+compliance_config:
+  vcenter:
+    ntp:
+      metadata:
+        configuration_id: "1246"
+        configuration_title: "The system must configure NTP time synchronization."
+      value:
+        mode: NTP
+        servers:
+          - 192.0.2.10
+          - time.example.com

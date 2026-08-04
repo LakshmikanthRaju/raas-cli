@@ -1,0 +1,12 @@
+api_version: saltext.vcf/values-schema/v1
+resource: dns
+required:
+  - dns.servers
+properties:
+  dns.servers:
+    type: array
+    min_items: 1
+    item_type: string
+  dns.search_domains:
+    type: array
+    item_type: string
