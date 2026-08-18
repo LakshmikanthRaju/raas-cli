@@ -1393,11 +1393,13 @@ A sample containerized deployment lives under `docker/`. It builds an image that
 
 - builds the `salt-config-cli` wheel from this repo and installs it (`scc`/`salt-config`/`raas` entry points);
 - installs the system `git` client that SCC shells out to for repo operations;
+- on container startup, optionally connects to RaaS and registers the `customer-values` data repo (see [Startup configuration](#startup-configuration) below);
 - runs a small FastAPI server (`docker/api/app.py`) with a single `POST /commands` endpoint that executes `scc` commands and returns the result.
 
 ```text
 docker/
 ├── Dockerfile
+├── entrypoint.sh
 └── api/
     ├── app.py
     └── requirements.txt
@@ -1429,6 +1431,47 @@ docker build \
 ```bash
 docker run --rm -p 8000:8000 salt-cli-api:latest
 ```
+
+### Startup configuration
+
+`docker/entrypoint.sh` runs automatically before the API server starts. If `SCC_SERVER_URL` and either `SCC_USERNAME`/`SCC_PASSWORD` or `SCC_CSP_API_TOKEN` are set, it performs the same setup as the [five-minute quick start](#five-minute-quick-start):
+
+```bash
+scc connect --name "$SCC_PROFILE_NAME" --server "$SCC_SERVER_URL" --username "$SCC_USERNAME" --password-stdin
+scc profile use "$SCC_PROFILE_NAME"
+scc profile test "$SCC_PROFILE_NAME" --no-prompt
+
+scc repo add customer-values \
+  --kind data \
+  --url "$CUSTOMER_VALUES_REPO_URL" \
+  --ref main \
+  --root . \
+  --layout '{environment}/{version}/{resource}/values.yaml' \
+  --auth token \
+  --default
+```
+
+| Variable                        | Required                    | Description                                                                                    |
+| -------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------ |
+| `SCC_SERVER_URL`                | yes (to enable setup)        | RaaS server URL.                                                                                  |
+| `SCC_USERNAME`                  | with `SCC_PASSWORD`          | RaaS username.                                                                                     |
+| `SCC_PASSWORD`                  | with `SCC_USERNAME`          | RaaS password, piped to `scc connect --password-stdin`.                                           |
+| `SCC_CSP_API_TOKEN`             | alternative to user/pass     | CSP API token; used instead of username/password if set.                                          |
+| `SCC_PROFILE_NAME`              | no (default `default`)       | Name of the connection profile to create/use.                                                     |
+| `CUSTOMER_VALUES_REPO_URL`      | no (registers repo if set)   | Git URL for the private customer-values repository.                                               |
+| `SCC_GIT_TOKEN_CUSTOMER_VALUES` | for `--auth token` fetches   | Git token for the `customer-values` source; resolved by `scc` at fetch time (see [Git source management](#git-repository-model)), not passed to `repo add`. |
+
+```bash
+docker run --rm -p 8000:8000 \
+  -e SCC_SERVER_URL=https://raas.example.com \
+  -e SCC_USERNAME=admin \
+  -e SCC_PASSWORD=secret \
+  -e CUSTOMER_VALUES_REPO_URL=ssh://git@git.example.com/customer/config-values.git \
+  -e SCC_GIT_TOKEN_CUSTOMER_VALUES=ghp_xxx \
+  salt-cli-api:latest
+```
+
+The `customer-values` repo registration only runs when `CUSTOMER_VALUES_REPO_URL` is set, and (like `scc profile use`/`scc profile test`) does not depend on the RaaS connection succeeding — a failed `scc connect` doesn't block it, and the container still starts the API server either way. Omit all the env vars to skip startup configuration entirely and boot straight into the API server, e.g. for local testing without a RaaS environment.
 
 ### Use
 
