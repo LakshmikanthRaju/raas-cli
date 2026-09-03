@@ -234,6 +234,28 @@ def load_settings(
         object.__setattr__(settings, "_password_source", source)
         return settings
 
+    if settings.auth == "api-token":
+        resolved_token = os.getenv("SCC_API_TOKEN")
+        source = "environment" if resolved_token else "none"
+        if not resolved_token:
+            from salt_config_cli.ui import keychain_get
+            resolved_token = keychain_get(settings.server_url, settings.username or "__api_token__")
+            if resolved_token:
+                source = "keychain"
+        if password_file and not resolved_token:
+            resolved_token = Path(password_file).expanduser().read_text(encoding="utf-8").strip()
+            source = f"file:{password_file}"
+        elif password_stdin and not resolved_token:
+            resolved_token = sys.stdin.readline().rstrip("\r\n")
+            source = "stdin"
+        elif password_prompt and not resolved_token:
+            resolved_token = prompt_password("API token")
+            source = "prompt"
+        if resolved_token:
+            settings.api_token = SecretStr(resolved_token)
+        object.__setattr__(settings, "_password_source", source)
+        return settings
+
     if password and _cli_password_provided_on_argv():
         warn_cli_password("--password")
 
@@ -2023,6 +2045,10 @@ def status(ctx, config, server, username, password, password_stdin, password_fil
         credential_value = mask(settings.csp_api_token.get_secret_value() if settings.csp_api_token else None)
         credential_label = "CSP API token"
         identity_value = settings.username or "token-based authentication"
+    elif settings.auth == "api-token":
+        credential_value = mask(settings.api_token.get_secret_value() if settings.api_token else None)
+        credential_label = f"API token ({settings.auth_server_url or 'no auth server configured'})"
+        identity_value = settings.username or "token-based authentication"
     else:
         credential_value = mask(settings.password.get_secret_value() if settings.password else None)
         credential_label = "Password"
@@ -2545,7 +2571,7 @@ def disconnect(ctx, purge, clear_all, assume_yes):
     settings = SaltConfigSettings.load_from_file(_GLOBAL_CONFIG_PATH, _ACTIVE_PROFILE_OVERRIDE)
     srv = settings.server_url
     user = settings.username
-    credential_identity = user or "__csp__"
+    credential_identity = user or ("__api_token__" if settings.auth == "api-token" else "__csp__")
 
     if not srv or srv == "https://localhost" or (settings.auth == "password" and not user):
         ui_warn("No active connection to disconnect.",

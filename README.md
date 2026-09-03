@@ -389,6 +389,52 @@ profiles:
 
 Passwords and tokens should be stored through the OS keychain, secure environment variables, stdin, a protected file, or a masked prompt. They should not be stored in profile YAML.
 
+### Authentication modes
+
+Each profile picks one authentication mode via `auth`:
+
+| `auth` value | Credential | How it reaches RaaS |
+| --- | --- | --- |
+| `password` (default) | RaaS username/password | Exchanged for a JWT via RaaS's own `/account/login`, sent as `Authorization: JWT <token>`. |
+| `csp-token` | VMware CSP API token | Exchanged for a CSP access token, sent as `csp-auth-token`. |
+| `api-token` | API token + auth server URL | Exchanged for a Bearer access token via `POST <auth_server_url>/acs/t/CUSTOMER/token`, sent as `Authorization: Bearer <token>`. |
+
+`api-token` is for environments that hand out short-lived access tokens through a VCF-style auth server instead of RaaS's own login or CSP, e.g.:
+
+```bash
+curl --request POST \
+  --url https://10.162.218.0:9002/acs/t/CUSTOMER/token \
+  --header 'Content-Type: application/x-www-form-urlencoded' \
+  --data api_token=<token> \
+  --data grant_type=urn:custom:vcf:params:oauth:grant-type:api-token
+```
+
+Configure it with:
+
+```bash
+scc configure --name lab \
+  --auth api-token \
+  --server https://raas-lab.example.com \
+  --auth-server-url https://10.162.218.0:9002
+
+scc profile login lab   # stores the API token in the OS keychain
+scc profile test lab
+```
+
+The resulting profile looks like:
+
+```yaml
+profiles:
+  lab:
+    server_url: https://raas-lab.example.com
+    auth: api-token
+    auth_server_url: https://10.162.218.0:9002
+```
+
+The tenant path segment (`CUSTOMER`) is fixed and not configurable.
+
+The API token itself is never written to YAML — store it via `scc profile login`, or set `SCC_API_TOKEN` for a single process (`SCC_AUTH_SERVER_URL` overrides the profile's auth server URL the same way). All commands that read a profile (`scc status`, `scc deploy`, ...) resolve the token automatically once it's configured — see `scc config env` for the full variable list. `scc connect` (the one-shot onboarding wizard) does not yet support `api-token`; use `scc configure` + `scc profile login` instead.
+
 ---
 
 ## Git repository model

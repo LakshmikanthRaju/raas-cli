@@ -100,6 +100,10 @@ class AriaConfigClient:
     # The login endpoint sits behind the same /raas prefix split as the RPC
     # endpoint on older deployments.
     LOGIN_PATH_CANDIDATES = ("/account/login", "/raas/account/login")
+    # Tenant path segment for the API-token exchange (POST
+    # {auth_server_url}/acs/t/{API_TOKEN_TENANT}/token). Fixed for this
+    # deployment rather than user-configurable.
+    API_TOKEN_TENANT = "CUSTOMER"
 
     def __init__(
         self,
@@ -110,6 +114,8 @@ class AriaConfigClient:
         csp_url: str = "https://console.cloud.vmware.com",
         csp_api_token: Optional[str] = None,
         csp_org_id: Optional[str] = None,
+        auth_server_url: Optional[str] = None,
+        api_token: Optional[str] = None,
         timeout: int = 60,
         ssl_verify: bool = True,
         ssl_cert: Optional[str] = None,
@@ -124,6 +130,10 @@ class AriaConfigClient:
         self.csp_url = csp_url.rstrip("/")
         self.csp_api_token = csp_api_token
         self.csp_org_id = csp_org_id
+        if auth_server_url and not auth_server_url.startswith(("http://", "https://")):
+            auth_server_url = f"https://{auth_server_url}"
+        self.auth_server_url = auth_server_url.rstrip("/") if auth_server_url else None
+        self.api_token = api_token
         self.timeout = timeout
         self.ssl_verify = ssl_verify
         self.ssl_cert = ssl_cert
@@ -136,6 +146,7 @@ class AriaConfigClient:
         self._xsrf_token: Optional[str] = None
         self._jwt: Optional[str] = None
         self._csp_access_token: Optional[str] = None
+        self._api_token_access_token: Optional[str] = None
         self._authenticated = False
         self._riq_counter = 0
 
@@ -216,6 +227,8 @@ class AriaConfigClient:
             headers["Authorization"] = f"JWT {self._jwt}"
         if self._csp_access_token:
             headers["csp-auth-token"] = self._csp_access_token
+        if self._api_token_access_token:
+            headers["Authorization"] = f"Bearer {self._api_token_access_token}"
         return headers
 
     def _extract_xsrf_token(self, response: httpx.Response) -> None:
@@ -277,11 +290,12 @@ class AriaConfigClient:
         # 2. Fresh login
         self._init_xsrf()
 
-        if self.csp_api_token:
+        if self.api_token and self.auth_server_url:
+            self._authenticate_api_token()
+        elif self.csp_api_token:
             self._authenticate_csp()
-
-        # If we have user/pass, exchange them for a JWT.
-        if self.username and self.password:
+        elif self.username and self.password:
+            # Exchange user/pass for a JWT.
             self._jwt = self._password_login()
             if not self._jwt:
                 raise AuthenticationError(
@@ -289,9 +303,10 @@ class AriaConfigClient:
                     "Check username/password and (if using LDAP) `config_name`.",
                     code=401,
                 )
-        elif not self.csp_api_token:
+        else:
             raise AuthenticationError(
-                "No credentials available. Provide username/password or a CSP API token.",
+                "No credentials available. Provide username/password, a CSP API token, "
+                "or an API token with an auth server URL.",
                 code=401,
             )
 
@@ -437,9 +452,10 @@ class AriaConfigClient:
         self._jwt = cached.get("jwt")
         self._xsrf_token = cached.get("xsrf_token")
         self._csp_access_token = cached.get("csp_access_token")
+        self._api_token_access_token = cached.get("api_token_access_token")
         for name, value in (cached.get("cookies") or {}).items():
             self._client.cookies.set(name, value)
-        if not self._jwt and not self._csp_access_token:
+        if not self._jwt and not self._csp_access_token and not self._api_token_access_token:
             return False
         try:
             response = self.call("test", "echo", message="scc_cache_probe", _verify=True)
@@ -453,6 +469,7 @@ class AriaConfigClient:
         self._jwt = None
         self._xsrf_token = None
         self._csp_access_token = None
+        self._api_token_access_token = None
         self._client.cookies.clear()
         self._token_cache.delete(self.server, self.username)
         return False
@@ -467,6 +484,7 @@ class AriaConfigClient:
             xsrf_token=self._xsrf_token,
             cookies=cookies,
             csp_access_token=self._csp_access_token,
+            api_token_access_token=self._api_token_access_token,
             jwt=self._jwt,
         )
 
@@ -494,6 +512,40 @@ class AriaConfigClient:
                 )
         except httpx.RequestError as e:
             raise ConnectionError(f"Failed to connect to CSP: {e}") from e
+
+    # --------------------------------------------------------- API token auth
+
+    def _authenticate_api_token(self) -> None:
+        """Exchange an API token for a Bearer access token via the VCF auth
+        server (POST {auth_server_url}/acs/t/{API_TOKEN_TENANT}/token)."""
+        try:
+            response = self._client.post(
+                f"{self.auth_server_url}/acs/t/{self.API_TOKEN_TENANT}/token",
+                headers={
+                    "Accept": "application/json;charset=UTF-8",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                data={
+                    "api_token": self.api_token,
+                    "grant_type": "urn:custom:vcf:params:oauth:grant-type:api-token",
+                },
+            )
+            if response.status_code == 200:
+                self._api_token_access_token = response.json().get("access_token")
+                if not self._api_token_access_token:
+                    raise AuthenticationError(
+                        "API token exchange succeeded but no access_token was returned.",
+                        code=response.status_code,
+                        detail=response.text[:200] if response.text else None,
+                    )
+            else:
+                raise AuthenticationError(
+                    "API token exchange failed",
+                    code=response.status_code,
+                    detail=response.text[:200] if response.text else None,
+                )
+        except httpx.RequestError as e:
+            raise ConnectionError(f"Failed to connect to auth server {self.auth_server_url}: {e}") from e
 
     # ------------------------------------------------------------------ RPC
 
